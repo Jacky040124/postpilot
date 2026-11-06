@@ -22,7 +22,8 @@ def _database_url() -> str:
         password = quote_plus(os.getenv("DB_PASSWORD", ""))
         port = os.getenv("DB_PORT", "5432")
         name = os.getenv("DB_NAME", "postpilot")
-        return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{name}"
+        sslmode = os.getenv("DB_SSLMODE", "prefer")  # RDS sets "require"
+        return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{name}?sslmode={sslmode}"
     return "sqlite:///./postpilot.db"
 
 

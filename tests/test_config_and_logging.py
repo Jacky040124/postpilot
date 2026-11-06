@@ -20,7 +20,9 @@ def test_database_url_from_parts_escapes_password(monkeypatch):
     monkeypatch.setenv("DB_PASSWORD", "p@ss/word")
     monkeypatch.setenv("DB_NAME", "postpilot")
     url = Settings.from_env().database_url
-    assert url == "postgresql+psycopg://postpilot:p%40ss%2Fword@db.internal:5432/postpilot"
+    assert url == (
+        "postgresql+psycopg://postpilot:p%40ss%2Fword@db.internal:5432/postpilot?sslmode=prefer"
+    )
 
 
 def test_defaults_without_env(monkeypatch):
