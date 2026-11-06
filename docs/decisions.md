@@ -58,7 +58,11 @@ in Secrets Manager. ECS injects it into the containers at start (`DB_PASSWORD`).
 **Why:** The password never appears in Terraform code, plans, or state, and RDS can rotate it.
 The alternative (`random_password` + our own secret) writes the password into the state file.
 
-**Trade-off:** After a rotation, running tasks keep the old password until they restart.
+**Trade-off:** RDS rotates this secret every 7 days by default, and ECS only injects secrets
+when a task starts. Existing connections keep working, but a long-running task that opens a
+new connection after a rotation would use the old password. Not solved yet; options are to
+read the secret from Secrets Manager when the connection pool connects (needs a task role
+permission) or to force a new deployment after each rotation via an EventBridge rule.
 
 ## ADR-006: Postgres as the queue (no SQS)
 

@@ -89,8 +89,9 @@ class. Roll back if a deploy caused it.
   ```
 
 **Fix:** during a deploy the circuit breaker handles this. Outside a deploy it is almost
-always the database or a secret that changed (e.g. the RDS-managed password was rotated and
-tasks need a restart: `aws ecs update-service ... --force-new-deployment`).
+always the database or a secret that changed. RDS rotates the DB password every 7 days and
+tasks only read it at start, so after a rotation restart them:
+`aws ecs update-service --cluster postpilot-<env> --service postpilot-<env>-api --force-new-deployment`.
 
 ## ecs-cpu-high
 

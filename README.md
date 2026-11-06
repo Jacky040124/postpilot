@@ -229,5 +229,7 @@ CloudWatch agent scraping `/metrics`.
 - Tables are created on startup (`create_all`). A real service would use Alembic migrations
   run as a one-off ECS task before the deploy.
 - The ALB serves HTTP unless you pass an ACM `certificate_arn`.
+- RDS rotates the DB password every 7 days, but tasks read it only at start (ADR-005).
+  Tasks need a restart after rotation until the app reads the secret itself.
 - The prod deploy rebuilds the image from the tagged commit instead of promoting the exact
   image that ran in dev (see ADR-007 in [docs/decisions.md](docs/decisions.md)).
