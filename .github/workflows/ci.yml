@@ -127,7 +127,7 @@ jobs:
           tflint --config="$GITHUB_WORKSPACE/infra/.tflint.hcl" --format=compact
 
   plan:
-    name: Terraform plan (${{ matrix.env }})
+    name: Terraform plan
     needs: terraform
     runs-on: ubuntu-latest
     # Only runs once AWS is wired up (see README "Deploying to AWS").
