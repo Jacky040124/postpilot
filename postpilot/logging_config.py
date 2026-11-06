@@ -40,3 +40,5 @@ def configure_logging(level: str = "INFO") -> None:
         logger.propagate = True
     # We log requests ourselves in JSON, so the plain-text access log is noise.
     logging.getLogger("uvicorn.access").disabled = True
+    # httpx logs every webhook call at INFO; our worker already logs the outcome.
+    logging.getLogger("httpx").setLevel(logging.WARNING)

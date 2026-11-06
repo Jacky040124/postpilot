@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from postpilot.config import Settings
 from postpilot.db import create_tables, make_engine, make_session_factory
-from postpilot.metrics import POSTS_PUBLISHED, PUBLISH_FAILURES, PUBLISH_LATENCY, QUEUE_BACKLOG
+from postpilot.metrics import WorkerMetrics as metrics
 from postpilot.models import Post, PostStatus, utcnow
 from postpilot.publisher import PublishError, WebhookPublisher
 
@@ -56,7 +56,7 @@ def process_batch(
             try:
                 publisher.publish(post)
             except PublishError as exc:
-                PUBLISH_FAILURES.inc()
+                metrics.failures.inc()
                 post.last_error = str(exc)[:500]
                 if post.attempts >= settings.max_attempts:
                     post.status = PostStatus.FAILED
@@ -77,14 +77,14 @@ def process_batch(
                 post.status = PostStatus.PUBLISHED
                 post.published_at = utcnow()
                 post.last_error = None
-                POSTS_PUBLISHED.inc()
+                metrics.published.inc()
                 published += 1
                 log.info("post_published", extra={"post_id": post.id, "channel": post.channel})
             finally:
-                PUBLISH_LATENCY.observe(time.perf_counter() - start)
+                metrics.latency.observe(time.perf_counter() - start)
 
     with session_factory() as session:
-        QUEUE_BACKLOG.set(count_backlog(session, utcnow()))
+        metrics.backlog.set(count_backlog(session, utcnow()))
     return published
 
 

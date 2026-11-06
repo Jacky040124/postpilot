@@ -111,6 +111,4 @@ def test_metrics_endpoint_exposes_app_metrics(client):
     body = client.get("/metrics").text
     assert "http_requests_total" in body
     assert 'route="/healthz"' in body
-    # Worker metrics are registered in the same module; the names must exist.
-    for name in ("posts_published_total", "publish_failures_total", "queue_backlog"):
-        assert name in body
+    assert "http_request_duration_seconds_bucket" in body

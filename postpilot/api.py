@@ -14,9 +14,9 @@ from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from postpilot import __version__
+from postpilot.api_metrics import HTTP_LATENCY, HTTP_REQUESTS
 from postpilot.config import Settings
 from postpilot.db import create_tables, make_engine, make_session_factory
-from postpilot.metrics import HTTP_LATENCY, HTTP_REQUESTS
 from postpilot.models import Post, PostStatus
 from postpilot.schemas import PostCreate, PostOut
 
