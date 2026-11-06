@@ -1,0 +1,120 @@
+name: Deploy
+
+# Runs after CI finishes. Deploys only if CI passed on a push:
+#   push to main -> dev
+#   tag v*       -> prod (the "prod" GitHub environment requires a manual approval)
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  preflight:
+    name: Decide what to deploy
+    runs-on: ubuntu-latest
+    if: >
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push'
+    outputs:
+      enabled: ${{ steps.check.outputs.enabled }}
+      environment: ${{ steps.check.outputs.environment }}
+    steps:
+      - id: check
+        env:
+          ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          REF: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          if [[ "$REF" == v* ]]; then environment=prod; else environment=dev; fi
+          echo "environment=$environment" >> "$GITHUB_OUTPUT"
+          if [ -z "$ROLE_ARN" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::AWS_DEPLOY_ROLE_ARN is not set, so the $environment deploy was skipped. See README 'Deploying to AWS'."
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "### Target: $environment (ref $REF)" >> "$GITHUB_STEP_SUMMARY"
+
+  deploy:
+    name: Deploy to ${{ needs.preflight.outputs.environment }}
+    needs: preflight
+    if: needs.preflight.outputs.enabled == 'true'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.preflight.outputs.environment }}
+    concurrency:
+      group: deploy-${{ needs.preflight.outputs.environment }}
+      cancel-in-progress: false # never cancel a deploy halfway
+    permissions:
+      contents: read
+      id-token: write # GitHub OIDC token -> short-lived AWS credentials
+    env:
+      NAME: postpilot-${{ needs.preflight.outputs.environment }}
+      IMAGE_TAG: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION || 'us-west-2' }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        id: image
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          image="$REGISTRY/$NAME:$IMAGE_TAG"
+          docker build -t "$image" .
+          docker push "$image"
+          echo "uri=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Fetch current task definitions
+        run: |
+          for svc in api worker; do
+            aws ecs describe-task-definition --task-definition "$NAME-$svc" \
+              --query taskDefinition > "td-$svc.json"
+          done
+
+      - id: render-api
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: td-api.json
+          container-name: api
+          image: ${{ steps.image.outputs.uri }}
+
+      # Rolling deploy. If new tasks fail health checks, the ECS circuit breaker
+      # rolls back to the previous revision and this step fails.
+      - name: Deploy api
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-api.outputs.task-definition }}
+          cluster: ${{ env.NAME }}
+          service: ${{ env.NAME }}-api
+          wait-for-service-stability: true
+          wait-for-minutes: 15
+
+      - id: render-worker
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: td-worker.json
+          container-name: worker
+          image: ${{ steps.image.outputs.uri }}
+
+      - name: Deploy worker
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.render-worker.outputs.task-definition }}
+          cluster: ${{ env.NAME }}
+          service: ${{ env.NAME }}-worker
+          wait-for-service-stability: true
+          wait-for-minutes: 15
+
+      - name: Summary
+        run: echo "### Deployed \`${{ steps.image.outputs.uri }}\` to $NAME" >> "$GITHUB_STEP_SUMMARY"
